@@ -12,19 +12,23 @@ HTTP_SERVER_PORT = 8094 (default)
 3. connect to ws://hostAddress:Port/gait
 
 ## Input data format/schema
-### event type: connected
+### event type: connect
 ```json
 {
-  "event": "connected"
+  "event": "connect",
+  "data": {
+    "uuid": "bBNhR0kYNXYoE0q6"
+  }
 }
 ```
 
-### event type: start
+### event type: gait
 ```json
 {
-  "event": "start",
-  "gait": {
-    "payload": "timestamp, x, y, z"
+  "event": "gait",
+  "data": {
+    "uuid": "bBNhR0kYNXYoE0q6",
+    "gait": ["timestamp0, x0, y0, z0", "timestamp1, x1, y1, z1" ]
   }
 }
 ```
@@ -33,8 +37,8 @@ HTTP_SERVER_PORT = 8094 (default)
 ```json
 {
   "event": "stop",
-  "gait": {
-    "payload": "timestamp, x, y, z"
+  "data": {
+    "uuid": "bBNhR0kYNXYoE0q6"
   }
 }
 ```
