@@ -9,6 +9,10 @@ from flask_sockets import Sockets
 app = Flask(__name__)
 sockets = Sockets(app)
 
+gunicorn_logger = logging.getLogger("gunicorn.error")
+app.logger.handlers = gunicorn_logger.handlers
+app.logger.setLevel(gunicorn_logger.level)
+
 HTTP_SERVER_PORT = 8094
 
 @sockets.route('/gait')
@@ -17,6 +21,7 @@ def echo(ws):
     message_count = 0
     q = queue.Queue()
     while not ws.closed:
+        last = ""
         message = ws.receive()
         if message is None:
             app.logger.info("No message received...")
@@ -34,8 +39,11 @@ def echo(ws):
             app.logger.info("Gait message: {}".format(message))
             dataPoints = data['data']['gait']
             for dataPoint in dataPoints:
-                print(dataPoint)
-                q.put(str(dataPoint))
+                app.logger.info("dataPoint={}".format(dataPoint))
+                current = str(dataPoint)
+                q.put(current)
+                verifyOrder(last, current)
+                last = current
 
         if data['event'] == "stop":
             uuid = data['data']['uuid']
@@ -51,8 +59,15 @@ def echo(ws):
 
     app.logger.info("Connection closed. Received a total of {} messages".format(message_count))
 
+def verifyOrder(last, current):
+    if last == "":
+       return 
+    lastTimeStamp = int(last.split(",")[0])
+    currentTimeStamp = int(current.split(",")[0])
+    if currentTimeStamp < lastTimeStamp:
+        app.logger.warning("Inconsistent order")
+
 if __name__ == '__main__':
-    app.logger.setLevel(logging.DEBUG)
     from gevent import pywsgi
     from geventwebsocket.handler import WebSocketHandler
 
