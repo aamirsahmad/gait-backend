@@ -5,7 +5,7 @@ import queue
 import boto3
 import os
 
-from flask import Flask
+from flask import Flask, redirect
 from flask_sockets import Sockets
 from botocore.exceptions import ClientError
 
@@ -19,6 +19,14 @@ app.logger.setLevel(gunicorn_logger.level)
 HTTP_SERVER_PORT = 8094
 ACCESS_KEY = os.getenv('ACCESS_KEY')
 SECRET_KEY = os.getenv('SECRET_KEY')
+
+@app.route('/')
+def index():
+    return 'Gait Identification & Analysis'
+
+@app.route('/docs')
+def docs():
+    return redirect("https://eecs-gia.gitlab.io/docs/", code=302)
 
 @sockets.route('/gait')
 def echo(ws):
