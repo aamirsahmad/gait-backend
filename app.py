@@ -4,6 +4,7 @@ import logging
 import queue
 import boto3
 import os
+import socket
 
 from flask import Flask, redirect
 from flask_sockets import Sockets
@@ -16,9 +17,25 @@ gunicorn_logger = logging.getLogger("gunicorn.error")
 app.logger.handlers = gunicorn_logger.handlers
 app.logger.setLevel(gunicorn_logger.level)
 
+app.logger.debug("Starting...")
+
 HTTP_SERVER_PORT = 8094
 ACCESS_KEY = os.getenv('ACCESS_KEY')
 SECRET_KEY = os.getenv('SECRET_KEY')
+
+LOCAL_IP = socket.gethostbyname('localhost')
+PORT = 9009
+
+# conn = None
+# s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+# s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+# s.bind((LOCAL_IP, PORT))
+# s.listen(1)
+# print("Waiting for TCP connection...")
+
+# # if the connection is accepted, proceed
+# conn, addr = s.accept()
+# print("Connected to Spark")
 
 @app.route('/')
 def index():
@@ -50,6 +67,7 @@ def echo(ws):
 
         if data['event'] == "gait":
             app.logger.info("Gait message: {}".format(message))
+            # sendToSpark(message)
             dataPoints = data['data']['gait']
             for dataPoint in dataPoints:
                 if dataPoint:
@@ -110,12 +128,15 @@ def verifyOrder(last, current):
     if currentTimeStamp < lastTimeStamp:
         app.logger.warning("Inconsistent order")
 
+def sendToSpark(message):
+    conn.send(str.encode(message + '\n'))
+
 
 def main():
     from gevent import pywsgi
     from geventwebsocket.handler import WebSocketHandler
     server = pywsgi.WSGIServer(('', HTTP_SERVER_PORT), app, handler_class=WebSocketHandler)
-    print("Server listening on: http://localhost:" + str(HTTP_SERVER_PORT))
+    app.logger.debug("Server listening on: http://localhost:" + str(HTTP_SERVER_PORT))
     server.serve_forever()
 
 
