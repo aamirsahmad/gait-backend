@@ -17,25 +17,25 @@ gunicorn_logger = logging.getLogger("gunicorn.error")
 app.logger.handlers = gunicorn_logger.handlers
 app.logger.setLevel(gunicorn_logger.level)
 
-app.logger.debug("Starting...")
-
 HTTP_SERVER_PORT = 8094
 ACCESS_KEY = os.getenv('ACCESS_KEY')
 SECRET_KEY = os.getenv('SECRET_KEY')
 
-LOCAL_IP = socket.gethostbyname('localhost')
+IP = '0.0.0.0'
 PORT = 9009
 
-# conn = None
-# s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-# s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-# s.bind((LOCAL_IP, PORT))
-# s.listen(1)
-# print("Waiting for TCP connection...")
+app.logger.debug("Starting...")
+app.logger.debug("SPARK SOCKET: " + IP + ":" + str(PORT))
 
-# # if the connection is accepted, proceed
-# conn, addr = s.accept()
-# print("Connected to Spark")
+# Spark socket connection
+conn = None
+s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+s.bind((IP, PORT))
+s.listen(1)
+app.logger.debug("Waiting for TCP connection...")
+conn, addr = s.accept()
+app.logger.debug("Connected to Spark")
 
 @app.route('/')
 def index():
@@ -67,7 +67,7 @@ def echo(ws):
 
         if data['event'] == "gait":
             app.logger.info("Gait message: {}".format(message))
-            # sendToSpark(message)
+            sendToSpark(message)
             dataPoints = data['data']['gait']
             for dataPoint in dataPoints:
                 if dataPoint:
@@ -93,7 +93,6 @@ def echo(ws):
     app.logger.info("Connection closed. Received a total of {} messages".format(message_count))
 
 
-# adapted from https://docs.aws.amazon.com/code-samples/latest/catalog/python-s3-upload_file.py.html
 def upload_file(file_name, bucket, uuid, object_name=None):
     """Upload a file to an S3 bucket
 
@@ -130,7 +129,6 @@ def verifyOrder(last, current):
 
 def sendToSpark(message):
     conn.send(str.encode(message + '\n'))
-
 
 def main():
     from gevent import pywsgi
