@@ -33,7 +33,7 @@
 ```
 
 
-## How to run alongside Apache Spark?
+## How to run alongside Apache Spark with two Docker containers?
 > Requires AWS IAM user with permissions for S3 actions.
 ```
 // gait app.py
