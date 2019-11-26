@@ -4,13 +4,12 @@ import logging
 import queue
 import boto3
 import os
-import math
 
-from flask import Flask, redirect, jsonify, request, abort
+from flask import Flask, redirect, request, jsonify, abort
 from flask_sockets import Sockets
 from botocore.exceptions import ClientError
 from flask_cors import CORS
-from operator import itemgetter
+
 
 app = Flask(__name__)
 sockets = Sockets(app)
@@ -26,20 +25,15 @@ SECRET_KEY = os.getenv('SECRET_KEY')
 
 # A dictionary of queues to feed the front-end. Each user ID is the key and their corresponding value is the queue
 # containing their data.
-queue_dicts = {}
-# Queue doesn't support len() that is why we need to use a counter.
-counter = 0
-
+user_dicts = {}
 
 @app.route('/')
 def index():
     return 'Gait Identification & Analysis'
 
-
 @app.route('/docs')
 def docs():
     return redirect("https://eecs-gia.gitlab.io/docs/", code=302)
-
 
 @sockets.route('/gait')
 def echo(ws):
@@ -75,27 +69,26 @@ def echo(ws):
                     timestamp = current_graph[2]
                     xyz_val = current_graph[6]
                     pair = (xyz_val, timestamp,)
-                    global queue_dicts
+                    global user_dicts
                     global counter
                     # app.logger.info("DEBUG: {}".format(counter))
                     # If the user_id already exists in the dictionary put the data in their queue.
                     # If not i.e. it is  the first time in this session we are putting their data to the queue,
                     # then create the dictionary entry for that user and place the data there.
-                    if user_id in queue_dicts:
+                    if user_id in user_dicts:
                         # Puts every 50th data to the users queue.
+                        counter = user_dicts[user_id]['counter']
                         if counter % 50 == 0:
-                            queue_dicts[user_id].put(pair)
-                        counter += 1
+                            user_dicts[user_id]["queue"].put(pair)
+                        user_dicts[user_id]['counter'] += 1
                     else:
-                        queue_dicts[user_id] = queue.Queue()
-                        queue_dicts[user_id].put(pair)
-                        counter += 1
-                    # app.logger.info("timestamp={} xyzval={}".format(timestamp, xyzval))
+                        user_dicts[user_id] = {"user_id": user_id, "queue": queue.Queue(), "counter": 1}
+                        user_dicts[user_id]["queue"].put(pair)
                     verifyOrder(last, current)
                     last = current
 
         if data['event'] == "stop":
-            queue_dicts.clear()
+            del user_dicts[data['data']['userid']]
             uuid = data['data']['uuid']
             app.logger.info("Stop Message received: {} for uuid={}".format(message, uuid))
             app.logger.info("Now saving CSV file")
@@ -113,32 +106,33 @@ def echo(ws):
 # Returns the list of online users for the front-end.
 @app.route('/get_users')
 def get_users():
-    global queue_dicts
+    global user_dicts
+    # app.logger.info("DEBUG {}".format(user_dicts))
     # app.logger.info("DEBUG {}".format(queue_dicts))
     # app.logger.info("DEBUG {}".format(list(queue_dicts.keys())))
-    user_ids = list(queue_dicts.keys())
+    user_ids = list(user_dicts.keys())
     data = {"user_ids": user_ids}
-    app.logger.info("DEBUG {}".format(user_ids))
+    # app.logger.info("DEBUG {}".format(user_ids))
     return jsonify(data), 200
 
 # Returns the data at the front of the user's queue. Request must include the id of the user the we are
 # requesting gait data for.
 @app.route('/get_queue_http')
 def get_queue_http():
-    global queue_dicts
+    global user_dicts
     global counter
     user_id = str(request.args.get("user_id", type=str))
     # user_id = str(1)
-    app.logger.info("DEBUG: {}".format(counter))
+    # app.logger.info("DEBUG: {}".format(counter))
     # app.logger.info("DEBUG: {}".format(queue_dicts[str(user_id)]))
 
     # If there is no such online user than return a 403 error.
     # If the requested user_id is currently online then return the data at the front of the queue.
-    if user_id not in queue_dicts:
+    if user_id not in user_dicts:
         abort(403)
     else:
-        app.logger.info("DEBUG: {}".format(queue_dicts[user_id]))
-        return jsonify(queue_dicts[user_id].get()), 200
+        # app.logger.info("DEBUG: {}".format(user_dicts[user_id]))
+        return jsonify(user_dicts[user_id]["queue"].get()), 200
 
 # This is what we had initially. However, it is easier to use http requests to fetch data so we ditched this. But,
 # maybe we will switch back to this after discussing.
@@ -146,16 +140,16 @@ def get_queue_http():
 # If the user_id is not online then it returns 403.
 @sockets.route('/get_queue')
 def get_queue(ws):
-    global queue_dicts
+    global user_dicts
     user_id = ws.receive()
     # app.logger.info("DEBUG {}".format(ws))
-    app.logger.info("DEBUG {}".format(user_id))
+    # app.logger.info("DEBUG {}".format(user_id))
     # queue_dicts[user_id].clear()
-    if user_id in queue_dicts:
+    if user_id in user_dicts:
         while True:  # user_id in queue_dicts
             # app.logger.info("DEBUG {}".format(queue_dicts))
-            current_data = queue_dicts[user_id].get()
-            app.logger.info("DEBUG {}".format(queue_dicts))
+            current_data = user_dicts[user_id]["queue"].get()
+            # app.logger.info("DEBUG {}".format(user_dicts))
             data = {"xyz": current_data[0], "timestamp": current_data[1]}
             ws.send(json.dumps(data))
             # app.logger.info("Sent data: {}".format(current_data))
@@ -167,9 +161,6 @@ def get_queue(ws):
 def ping():
     resp = jsonify(success=True)
     return resp, 200
-
-
-
 
 # adapted from https://docs.aws.amazon.com/code-samples/latest/catalog/python-s3-upload_file.py.html
 def upload_file(file_name, bucket, uuid, object_name=None):
