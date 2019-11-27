@@ -4,19 +4,26 @@ import sys
 import requests
 import socket
 import pyspark as ps
-from pyspark import SparkConf, SparkContext,SparkFiles
+from pyspark import SparkConf, SparkContext, SparkFiles
 import pyspark.streaming as pss
 from pyspark.sql import Row, SQLContext
 from pyspark.sql import SparkSession
 
 import math
-from collections import OrderedDict 
+from collections import OrderedDict
+from tensorflow.compat.v1.gfile import FastGFile
+import tensorflow as tf
 
 from io import StringIO
 import pandas as pd
+import numpy as np
 import os
 
 import data_transformation as dt
+
+back_end_url = "http://" + os.environ['GAIT_PORT_9009_TCP_ADDR'] + ':8095/add_inference'
+
+
 # import json # parse incoming data to json and then access fields
 
 # from pyspark.conf import SparkConf
@@ -36,14 +43,14 @@ def partition_mapper_func(partition_map):
         for str_data in tuple_data[1:]:
             # 'ResultIterable' object str_data
             # ASSERT : samples == 2 if job interval == 5 sec
-            dl_sample_list = data_processing_driver(str_data) 
+            dl_sample_list = data_processing_driver(str_data)
             res.append(dl_sample_list)
             # sample = find_all_peaks_in_partition(str_data)
             # res.append(sample)
             # print(type(str_data)) # <class 'str'>
             # for line in str_data:
-                # print(type(line))  # <class 'str'>
-                # print(line)
+            # print(type(line))  # <class 'str'>
+            # print(line)
     return res
 
 
@@ -54,7 +61,7 @@ def data_processing_driver(str_data):
     # print('peak_map length is : ' + str(len(peak_map)))
 
     # print('str data length is ' + str(len(str_data)))
-    if(len(peak_map) < 5):
+    if (len(peak_map) < 5):
         return dl_sample_list
     # else:
     #     for (k,v) in peak_map.items():
@@ -63,7 +70,6 @@ def data_processing_driver(str_data):
 
     samples_list = dt.gait_segmentation(str_data, peak_map)
 
-    
     for sample in samples_list:
         # print('here is a gait sample after segmentation')
         # print(sample)
@@ -80,6 +86,7 @@ def data_processing_driver(str_data):
 def getUserId(line):
     return str(line.split(",")[1])
 
+
 def main():
     # start connection
     # configure spark instance to default
@@ -92,7 +99,7 @@ def main():
     s_context = SparkContext(conf=config)
     s_context.setLogLevel("ERROR")
 
-    sys.path.insert(0,SparkFiles.getRootDirectory())
+    sys.path.insert(0, SparkFiles.getRootDirectory())
 
     s_context.addFile("./data_transformation.py")
     # TODO: add logger to spark
@@ -103,6 +110,11 @@ def main():
     s_stream_context = pss.StreamingContext(s_context, interval_seconds)
     s_stream_context.checkpoint("checkpoint_TSA")
 
+    with tf.gfile.GFile('./frozenInferenceGraphIdentification.pb', "rb") as f:
+        model_data = f.read()
+
+    model_data_bc = s_context.broadcast(model_data)
+
     # connect to port 9009 i.e. twitter-client
     socket_ts = s_stream_context.socketTextStream("gait", 9009)
 
@@ -112,9 +124,8 @@ def main():
     gait = line.map(lambda g: (getUserId(g).strip(), g.strip()))
     gaitByUserId = gait.groupByKey()
 
-
-    sortedGaitByUserId = gaitByUserId.transform  (lambda foo:foo
-    .sortBy(lambda x:( x[0])) )
+    sortedGaitByUserId = gaitByUserId.transform(lambda foo: foo
+                                                .sortBy(lambda x: (x[0])))
 
     # sortedGaitByUserId = gaitByUserId.sortByKey()
 
@@ -132,7 +143,57 @@ def main():
     # for e in x.collect():
     #     print (e)
 
-    segmentedData.pprint()
+    # segmentedData.pprint()
+
+    # DO NOT CHANGE THE LOCATION OF THIS FUNCTION
+    def infer(data_rdd):
+        # print("ATTEMPTING DEEP LEARNING")
+        try:
+            datas = data_rdd.collect()
+            if len(datas) > 0:
+                # print("INSIDE TRY BEFORE WITH")
+                with tf.Graph().as_default() as graph:
+                    graph_def = tf.GraphDef()
+                    graph_def.ParseFromString(model_data_bc.value)
+                    tf.import_graph_def(graph_def, name="prefix")
+                # print("INSIDE TRY AFTER WITH")
+                x = graph.get_tensor_by_name('prefix/Placeholder:0')
+                y = graph.get_tensor_by_name('prefix/Softmax:0')
+
+                for data in datas:
+                    for id_xyz in data:
+                        if id_xyz:
+                            id = id_xyz[0]
+                            dummy_axis = "0.000000000000000000e+00 0.000000000000000000e+00 0.000000000000000000e+00 0.000000000000000000e+00 0.000000000000000000e+00 0.000000000000000000e+00 0.000000000000000000e+00 0.000000000000000000e+00 0.000000000000000000e+00 0.000000000000000000e+00 0.000000000000000000e+00 0.000000000000000000e+00 0.000000000000000000e+00 0.000000000000000000e+00 0.000000000000000000e+00 0.000000000000000000e+00 0.000000000000000000e+00 0.000000000000000000e+00 0.000000000000000000e+00 0.000000000000000000e+00 0.000000000000000000e+00 0.000000000000000000e+00 0.000000000000000000e+00 0.000000000000000000e+00 0.000000000000000000e+00 0.000000000000000000e+00 0.000000000000000000e+00 0.000000000000000000e+00 0.000000000000000000e+00 0.000000000000000000e+00 0.000000000000000000e+00 0.000000000000000000e+00 0.000000000000000000e+00 0.000000000000000000e+00 0.000000000000000000e+00 0.000000000000000000e+00 0.000000000000000000e+00 0.000000000000000000e+00 0.000000000000000000e+00 0.000000000000000000e+00 0.000000000000000000e+00 0.000000000000000000e+00 0.000000000000000000e+00 0.000000000000000000e+00 0.000000000000000000e+00 0.000000000000000000e+00 0.000000000000000000e+00 0.000000000000000000e+00 0.000000000000000000e+00 0.000000000000000000e+00 0.000000000000000000e+00 0.000000000000000000e+00 0.000000000000000000e+00 0.000000000000000000e+00 0.000000000000000000e+00 0.000000000000000000e+00 0.000000000000000000e+00 0.000000000000000000e+00 0.000000000000000000e+00 0.000000000000000000e+00 0.000000000000000000e+00 0.000000000000000000e+00 0.000000000000000000e+00 0.000000000000000000e+00 0.000000000000000000e+00 0.000000000000000000e+00 0.000000000000000000e+00 0.000000000000000000e+00 0.000000000000000000e+00 0.000000000000000000e+00 0.000000000000000000e+00 0.000000000000000000e+00 0.000000000000000000e+00 0.000000000000000000e+00 0.000000000000000000e+00 0.000000000000000000e+00 0.000000000000000000e+00 0.000000000000000000e+00 0.000000000000000000e+00 0.000000000000000000e+00 0.000000000000000000e+00 0.000000000000000000e+00 0.000000000000000000e+00 0.000000000000000000e+00 0.000000000000000000e+00 0.000000000000000000e+00 0.000000000000000000e+00 0.000000000000000000e+00 0.000000000000000000e+00 0.000000000000000000e+00 0.000000000000000000e+00 0.000000000000000000e+00 0.000000000000000000e+00 0.000000000000000000e+00 0.000000000000000000e+00 0.000000000000000000e+00 0.000000000000000000e+00 0.000000000000000000e+00 0.000000000000000000e+00 0.000000000000000000e+00 0.000000000000000000e+00 0.000000000000000000e+00 0.000000000000000000e+00 0.000000000000000000e+00 0.000000000000000000e+00 0.000000000000000000e+00 0.000000000000000000e+00 0.000000000000000000e+00 0.000000000000000000e+00 0.000000000000000000e+00 0.000000000000000000e+00 0.000000000000000000e+00 0.000000000000000000e+00 0.000000000000000000e+00 0.000000000000000000e+00 0.000000000000000000e+00 0.000000000000000000e+00 0.000000000000000000e+00 0.000000000000000000e+00 0.000000000000000000e+00 0.000000000000000000e+00 0.000000000000000000e+00 0.000000000000000000e+00 0.000000000000000000e+00 0.000000000000000000e+00 0.000000000000000000e+00 0.000000000000000000e+00 0.000000000000000000e+00"
+                            input_signals = []
+                            input_signals.extend(id_xyz[1:])
+                            for i in range(3):
+                                input_signals.append(dummy_axis)
+
+                            X_signals = []
+                            for each in input_signals:
+                                X_signals.append(
+                                    [np.array(cell, dtype=np.float32) for cell in [each.strip().split(' ')]])
+                            X_test = np.transpose(np.array(X_signals), (1, 2, 0))
+
+                            with tf.Session(graph=graph) as sess:
+                                y_out = sess.run(y, feed_dict={
+                                    x: X_test
+                                })
+
+                                for each in y_out:
+                                    inferred_user_id = str(np.argmax(each) + 1)
+                                    confidency = str(np.amax(each))
+                                    actual_user_id = str(id)
+                                    results = {'confidency': confidency, 'inferred_user_id': inferred_user_id,
+                                               'actual_user_id': actual_user_id}
+                                    print(results)
+                                    requests.post(back_end_url, json=results)
+        except:
+            e = sys.exc_info()
+            print("Error: %s" % e)
+
+    segmentedData.foreachRDD(infer)
 
     # start the streaming computation
     s_stream_context.start()
@@ -141,7 +202,6 @@ def main():
         s_stream_context.awaitTermination()
     except KeyboardInterrupt:
         print("\nSpark shutting down\n")
-
 
 
 if __name__ == "__main__":
