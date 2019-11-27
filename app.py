@@ -5,6 +5,7 @@ import queue
 import boto3
 import os
 import time
+import socket
 
 from flask import Flask, redirect, request, jsonify, abort
 from flask_sockets import Sockets
@@ -23,13 +24,28 @@ HTTP_SERVER_PORT = 8094
 ACCESS_KEY = os.getenv('ACCESS_KEY')
 SECRET_KEY = os.getenv('SECRET_KEY')
 
+IP = '0.0.0.0'
+PORT = 9009
+
+app.logger.debug("Starting...")
+app.logger.debug("SPARK SOCKET: " + IP + ":" + str(PORT))
+
+# Spark socket connection
+conn = None
+s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+s.bind((IP, PORT))
+s.listen(1)
+app.logger.debug("Waiting for TCP connection...")
+conn, addr = s.accept()
+app.logger.debug("Connected to Spark")
+
 # A dictionary of queues to feed the front-end. Each user ID is the key and their corresponding value is the queue
 # containing their data.
 user_dicts = {}
 
 # We will use this to fetch the name of the user using the id received from Spark.
 id_name_dict = {0: "Aamir", 1: "Michael", 2: "Hassaan", 3: "Ege"}
-
 
 @app.route('/')
 def index():
@@ -62,7 +78,8 @@ def echo(ws):
             app.logger.info("Connected Message received: {} for uuid={}".format(message, uuid))
 
         if data['event'] == "gait":
-            # app.logger.info("Gait message: {}".format(message))
+            app.logger.info("Gait message: {}".format(message))
+            sendToSpark(message)
             dataPoints = data['data']['gait']
             for dataPoint in dataPoints:
                 if dataPoint:
@@ -109,7 +126,6 @@ def echo(ws):
         message_count += 1
 
     app.logger.info("Connection closed. Received a total of {} messages".format(message_count))
-
 
 # Returns the list of online users for the front-end.
 @app.route('/get_users')
@@ -204,8 +220,6 @@ def ping():
     resp = jsonify(success=True)
     return resp, 200
 
-
-# adapted from https://docs.aws.amazon.com/code-samples/latest/catalog/python-s3-upload_file.py.html
 def upload_file(file_name, bucket, uuid, object_name=None):
     """Upload a file to an S3 bucket
 
@@ -240,12 +254,14 @@ def verifyOrder(last, current):
     if currentTimeStamp < lastTimeStamp:
         app.logger.warning("Inconsistent order")
 
+def sendToSpark(message):
+    conn.send(str.encode(message + '\n'))
 
 def main():
     from gevent import pywsgi
     from geventwebsocket.handler import WebSocketHandler
     server = pywsgi.WSGIServer(('', HTTP_SERVER_PORT), app, handler_class=WebSocketHandler)
-    print("Server listening on: http://localhost:" + str(HTTP_SERVER_PORT))
+    app.logger.debug("Server listening on: http://localhost:" + str(HTTP_SERVER_PORT))
     server.serve_forever()
 
 
