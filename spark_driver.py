@@ -29,7 +29,9 @@ def main():
     print("\n################################\n")
 
     line = socket_ts.flatMap(lambda line: line.split("\n"))
-    line.pprint()
+    gait = line.map(lambda g: (getUserId(g).strip(), g.strip()))
+    gaitByUserId = gait.groupByKey()
+    gaitByUserId.pprint()
 
     # start the streaming computation
     s_stream_context.start()
@@ -39,6 +41,8 @@ def main():
     except KeyboardInterrupt:
         print("\nSpark shutting down\n")
 
+def getUserId(line):
+    return str(line.split(",")[1])
 
 if __name__ == "__main__":
     main()

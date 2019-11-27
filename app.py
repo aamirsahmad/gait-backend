@@ -6,6 +6,7 @@ import boto3
 import os
 import time
 import socket
+import json
 
 from flask import Flask, redirect, request, jsonify, abort
 from flask_sockets import Sockets
@@ -255,7 +256,10 @@ def verifyOrder(last, current):
         app.logger.warning("Inconsistent order")
 
 def sendToSpark(message):
-    conn.send(str.encode(message + '\n'))
+    data = json.loads(message)
+    gait = data["data"]["gait"]
+    for datapoint in gait:
+        conn.send(str.encode(datapoint + '\n'))
 
 def main():
     from gevent import pywsgi
