@@ -6,8 +6,9 @@ import boto3
 import os
 import time
 import socket
+import datetime
 
-from flask import Flask, redirect, request, jsonify, abort
+from flask import Flask, redirect, request, jsonify, abort, Response, json
 from flask_sockets import Sockets
 from botocore.exceptions import ClientError
 from flask_cors import CORS
@@ -75,10 +76,10 @@ def echo(ws):
         # Using the event type you can determine what type of message you are receiving
         if data['event'] == "connect":
             uuid = data['data']['uuid']
-            app.logger.info("Connected Message received: {} for uuid={}".format(message, uuid))
+            # app.logger.info("Connected Message received: {} for uuid={}".format(message, uuid))
 
         if data['event'] == "gait":
-            app.logger.info("Gait message: {}".format(message))
+            # app.logger.info("Gait message: {}".format(message))
             sendToSpark(message)
             dataPoints = data['data']['gait']
             for dataPoint in dataPoints:
@@ -100,10 +101,10 @@ def echo(ws):
                     # then create the dictionary entry for that user and place the data there.
                     if user_id in user_dicts:
                         # Puts every 50th data to the users queue.
-                        counter = user_dicts[user_id]['counter']
-                        if counter % 25 == 0:
-                            user_dicts[user_id]["queue"].put(pair)
-                        user_dicts[user_id]['counter'] += 1
+                        # counter = user_dicts[user_id]['counter']
+                        # if counter % 25 == 0:
+                        user_dicts[user_id]["queue"].put(pair)
+                        # user_dicts[user_id]['counter'] += 1
                     else:
                         user_dicts[user_id] = {"user_id": user_id, "queue": queue.Queue(), "counter": 1,
                                                "inferences": []}
@@ -114,12 +115,12 @@ def echo(ws):
         if data['event'] == "stop":
             del user_dicts[data['data']['userid']]
             uuid = data['data']['uuid']
-            app.logger.info("Stop Message received: {} for uuid={}".format(message, uuid))
-            app.logger.info("Now saving CSV file")
+            # app.logger.info("Stop Message received: {} for uuid={}".format(message, uuid))
+            # app.logger.info("Now saving CSV file")
             with open(uuid + ".csv", 'a') as file:
                 while (not q.empty()):
                     file.write(q.get() + '\n')
-            app.logger.info("Gait data saved as {}.csv".format(uuid))
+            # app.logger.info("Gait data saved as {}.csv".format(uuid))
             upload_file(uuid + ".csv", "gait-poc-bucket", uuid)
             break
 
@@ -131,12 +132,8 @@ def echo(ws):
 @app.route('/get_users')
 def get_users():
     global user_dicts
-    # app.logger.info("DEBUG {}".format(user_dicts))
-    # app.logger.info("DEBUG {}".format(queue_dicts))
-    # app.logger.info("DEBUG {}".format(list(queue_dicts.keys())))
     user_ids = list(user_dicts.keys())
     data = {"user_ids": user_ids}
-    # app.logger.info("DEBUG {}".format(user_ids))
     return jsonify(data), 200
 
 
@@ -146,22 +143,23 @@ def get_users():
 def get_queue_http():
     global user_dicts
     user_id = str(request.args.get("user_id", type=str))
-    # user_id = str(1)
-    # app.logger.info("DEBUG: {}".format(counter))
-    # app.logger.info("DEBUG: {}".format(queue_dicts[str(user_id)]))
 
     # If there is no such online user than return a 403 error.
     # If the requested user_id is currently online then return the data at the front of the queue.
     if user_id not in user_dicts:
         abort(403)
     else:
-        # Returns data that is up to date, i.e. data returned is assured that it is not older than 3 seconds.
-        current_time = int(time.time()) * 1000
-        while True:
-            gait_data = user_dicts[user_id]["queue"].get()
-            if int(gait_data[1]) + 3000 >= current_time:
-                return jsonify(gait_data), 200
-        # return jsonify(user_dicts[user_id]["queue"].get()), 200
+        # app.logger.info("DEBUG: {}".format(user_dicts))
+        user_queue = user_dicts[user_id]["queue"]
+        # user_queue.queue.clear()
+        res = user_queue.get()
+        app.logger.info("DEBUG: {}".format(user_queue.qsize()))
+        return jsonify(res), 200
+
+
+def gait_data_generator(user_queue):
+    while True:
+        yield (json.dumps(user_queue.get()))
 
 
 # Allows Spark to add inferences for users.
@@ -201,15 +199,20 @@ def get_queue(ws):
     user_id = ws.receive()
     # app.logger.info("DEBUG {}".format(ws))
     # app.logger.info("DEBUG {}".format(user_id))
-    # queue_dicts[user_id].clear()
     if user_id in user_dicts:
+        user_dicts[user_id]["queue"].queue.clear()
+        # app.logger.info("DEBUG SOCKET STARTED FOR {}".format(user_id))
+        last_sent_timestamp = float("-Inf")
         while True:  # user_id in queue_dicts
-            # app.logger.info("DEBUG {}".format(queue_dicts))
             current_data = user_dicts[user_id]["queue"].get()
-            # app.logger.info("DEBUG {}".format(user_dicts))
-            data = {"xyz": current_data[0], "timestamp": current_data[1]}
-            ws.send(json.dumps(data))
-            # app.logger.info("Sent data: {}".format(current_data))
+            if last_sent_timestamp + 200 > float(current_data[1]):
+                continue
+            else:
+                data = {"xyz": current_data[0], "timestamp": current_data[1]}
+                ws.send(json.dumps(data))
+                last_sent_timestamp = float(current_data[1])
+                ts = datetime.datetime.fromtimestamp(float(current_data[1]) / 1000)
+                # app.logger.info("DEBUG TIME {} XYZ {}".format(user_id, str(ts) ))
     else:
         abort(403)
 
