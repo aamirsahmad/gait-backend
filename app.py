@@ -11,6 +11,8 @@ from botocore.exceptions import ClientError
 from flask import Flask, redirect, request, jsonify, abort
 from flask_cors import CORS
 from flask_sockets import Sockets
+from collections import OrderedDict
+
 
 # Environment variables
 HTTP_SERVER_PORT = 8094
@@ -36,7 +38,7 @@ spark_conn = None
 
 # A dictionary of queues to feed the front-end. Each user ID is the key and their corresponding value is the queue
 # containing their data.
-user_dicts = {}
+user_dicts = OrderedDict()
 
 # We will use this to fetch the name of the user using the id received from Spark.
 id_name_dict = {1: "A", 2: "H", 3: "E", 4: "M"}
@@ -114,8 +116,8 @@ def echo(ws):
                     if user_id in user_dicts:
                         # Puts every 50th data to the users queue.
                         counter = user_dicts[user_id]['counter']
-                        if counter % 25 == 0:
-                            user_dicts[user_id]["queue"].put(pair)
+                        # if counter % 25 == 0:
+                        user_dicts[user_id]["queue"].put(pair)
                         user_dicts[user_id]['counter'] += 1
                     else:
                         user_dicts[user_id] = {"user_id": user_id, "queue": queue.Queue(), "counter": 1,
