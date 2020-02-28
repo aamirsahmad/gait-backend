@@ -7,11 +7,13 @@ import os
 import time
 import socket
 import json
+import datetime
 
 from flask import Flask, redirect, request, jsonify, abort
 from flask_sockets import Sockets
 from botocore.exceptions import ClientError
 from flask_cors import CORS
+from multiprocessing import Process, Queue
 
 app = Flask(__name__)
 sockets = Sockets(app)
@@ -46,7 +48,8 @@ app.logger.debug("Connected to Spark")
 user_dicts = {}
 
 # We will use this to fetch the name of the user using the id received from Spark.
-id_name_dict = {0: "Aamir", 1: "Michael", 2: "Hassaan", 3: "Ege"}
+id_name_dict = {1: "Aamir", 2: "Hassaan", 3: "Ege", 4: "Michael"}
+
 
 @app.route('/')
 def index():
@@ -79,7 +82,7 @@ def echo(ws):
             app.logger.info("Connected Message received: {} for uuid={}".format(message, uuid))
 
         if data['event'] == "gait":
-            app.logger.info("Gait message: {}".format(message))
+            # app.logger.info("Gait message: {}".format(message))
             sendToSpark(message)
             dataPoints = data['data']['gait']
             for dataPoint in dataPoints:
@@ -128,6 +131,7 @@ def echo(ws):
 
     app.logger.info("Connection closed. Received a total of {} messages".format(message_count))
 
+
 # Returns the list of online users for the front-end.
 @app.route('/get_users')
 def get_users():
@@ -147,33 +151,38 @@ def get_users():
 def get_queue_http():
     global user_dicts
     user_id = str(request.args.get("user_id", type=str))
-    # user_id = str(1)
-    # app.logger.info("DEBUG: {}".format(counter))
-    # app.logger.info("DEBUG: {}".format(queue_dicts[str(user_id)]))
 
     # If there is no such online user than return a 403 error.
     # If the requested user_id is currently online then return the data at the front of the queue.
     if user_id not in user_dicts:
         abort(403)
     else:
-        # Returns data that is up to date, i.e. data returned is assured that it is not older than 3 seconds.
-        current_time = int(time.time()) * 1000
-        while True:
-            gait_data = user_dicts[user_id]["queue"].get()
-            if int(gait_data[1]) + 3000 >= current_time:
-                return jsonify(gait_data), 200
-        # return jsonify(user_dicts[user_id]["queue"].get()), 200
+        # app.logger.info("DEBUG: {}".format(user_dicts))
+        user_queue = user_dicts[user_id]["queue"]
+        # user_queue.queue.clear()
+        res = user_queue.get()
+        app.logger.info("DEBUG: {}".format(user_queue.qsize()))
+        return jsonify(res), 200
+
+
+def gait_data_generator(user_queue):
+    while True:
+        yield (json.dumps(user_queue.get()))
 
 
 # Allows Spark to add inferences for users.
-@app.route('/add_inference')
+@app.route('/add_inference', methods=['POST'])
 def add_inference():
     # Expecting an array of objects where each object is like the following.
     # {"confidency": 0.98, "inferred_user_id": 1, "actual_user_id": 1}
     global user_dicts
     incoming_data = request.get_json()
+    # app.logger.info("DEBUG: {}".format(user_dicts))
+    # app.logger.info("DEBUG: {}".format(incoming_data))
     if incoming_data["actual_user_id"] in user_dicts:
-        inference = {"confidency": incoming_data['confidency'], "inferred_user_id": incoming_data["inferred_user_id"]}
+        app.logger.info("DEBUG: {}".format(user_dicts))
+        inference = {"confidency": incoming_data['confidency'], "inferred_user_id": incoming_data["inferred_user_id"],
+                     "inferred_users_name": id_name_dict[incoming_data["inferred_user_id"]]}
         user_dicts[incoming_data["actual_user_id"]]["inferences"].append(inference)
         resp = jsonify(success=True)
         return resp, 200
@@ -186,6 +195,7 @@ def add_inference():
 def get_inference():
     actual_user_id = str(request.args.get("user_id", type=str))
     global user_dicts
+    app.logger.info("DEBUG: {}".format(user_dicts))
     if actual_user_id in user_dicts:
         return jsonify(items=user_dicts[actual_user_id]["inferences"]), 200
     else:
@@ -202,24 +212,51 @@ def get_queue(ws):
     user_id = ws.receive()
     # app.logger.info("DEBUG {}".format(ws))
     # app.logger.info("DEBUG {}".format(user_id))
-    # queue_dicts[user_id].clear()
     if user_id in user_dicts:
+        user_dicts[user_id]["queue"].queue.clear()
+        # app.logger.info("DEBUG SOCKET STARTED FOR {}".format(user_id))
+        last_sent_timestamp = float("-Inf")
         while True:  # user_id in queue_dicts
-            # app.logger.info("DEBUG {}".format(queue_dicts))
             current_data = user_dicts[user_id]["queue"].get()
-            # app.logger.info("DEBUG {}".format(user_dicts))
-            data = {"xyz": current_data[0], "timestamp": current_data[1]}
-            ws.send(json.dumps(data))
-            # app.logger.info("Sent data: {}".format(current_data))
+            if last_sent_timestamp + 200 > float(current_data[1]):
+                continue
+            else:
+                data = {"xyz": current_data[0], "timestamp": current_data[1]}
+                ws.send(json.dumps(data))
+                last_sent_timestamp = float(current_data[1])
+                ts = datetime.datetime.fromtimestamp(float(current_data[1]) / 1000)
+                # app.logger.info("DEBUG TIME {} XYZ {}".format(user_id, str(ts) ))
     else:
-        abort(403)
+        abort (403)
 
+# def get_queue_fork(queue, ws):
+#     global user_dicts
+#     user_id = ws.receive()
+#     # app.logger.info("DEBUG {}".format(ws))
+#     # app.logger.info("DEBUG {}".format(user_id))
+#     if user_id in user_dicts:
+#         user_dicts[user_id]["queue"].queue.clear()
+#         # app.logger.info("DEBUG SOCKET STARTED FOR {}".format(user_id))
+#         last_sent_timestamp = float("-Inf")
+#         while True:  # user_id in queue_dicts
+#             current_data = user_dicts[user_id]["queue"].get()
+#             if last_sent_timestamp + 200 > float(current_data[1]):
+#                 continue
+#             else:
+#                 data = {"xyz": current_data[0], "timestamp": current_data[1]}
+#                 ws.send(json.dumps(data))
+#                 last_sent_timestamp = float(current_data[1])
+#                 ts = datetime.datetime.fromtimestamp(float(current_data[1]) / 1000)
+#                 # app.logger.info("DEBUG TIME {} XYZ {}".format(user_id, str(ts) ))
+#     else:
+#         queue.append(403)
 
 # Simple API route to check availability of the back-end.
 @app.route('/ping')
 def ping():
     resp = jsonify(success=True)
     return resp, 200
+
 
 def upload_file(file_name, bucket, uuid, object_name=None):
     """Upload a file to an S3 bucket
@@ -255,11 +292,21 @@ def verifyOrder(last, current):
     if currentTimeStamp < lastTimeStamp:
         app.logger.warning("Inconsistent order")
 
+# https://stackoverflow.com/questions/35068363/how-to-get-around-a-websocket-call-blocking-other-websocket-calls
 def sendToSpark(message):
+    p = Process(target=sendToSparkHelper, args=(message,))
+    p.start()
+    # data = json.loads(message)
+    # gait = data["data"]["gait"]
+    # for datapoint in gait:
+    #     conn.send(str.encode(datapoint + '\n'))
+
+def sendToSparkHelper(message):
     data = json.loads(message)
     gait = data["data"]["gait"]
     for datapoint in gait:
         conn.send(str.encode(datapoint + '\n'))
+
 
 def main():
     from gevent import pywsgi
