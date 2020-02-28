@@ -1,54 +1,62 @@
-import base64
+import datetime
 import json
 import logging
-import queue
-import boto3
 import os
-import time
+import queue
 import socket
-import json
-import datetime
+import boto3
 
-from flask import Flask, redirect, request, jsonify, abort
-from flask_sockets import Sockets
+from multiprocessing import Process
 from botocore.exceptions import ClientError
+from flask import Flask, redirect, request, jsonify, abort
 from flask_cors import CORS
-from multiprocessing import Process, Queue
+from flask_sockets import Sockets
 
+# Environment variables
+HTTP_SERVER_PORT = 8094
+ACCESS_KEY = os.getenv('ACCESS_KEY')
+SECRET_KEY = os.getenv('SECRET_KEY')
+SPARK = os.getenv('SPARK')
+
+# Constants
+IP = '0.0.0.0'
+PORT = 9009
+
+# Flask
 app = Flask(__name__)
 sockets = Sockets(app)
 CORS(app)
 
+# Gunicorn Logger
 gunicorn_logger = logging.getLogger("gunicorn.error")
 app.logger.handlers = gunicorn_logger.handlers
 app.logger.setLevel(gunicorn_logger.level)
 
-HTTP_SERVER_PORT = 8094
-ACCESS_KEY = os.getenv('ACCESS_KEY')
-SECRET_KEY = os.getenv('SECRET_KEY')
-
-IP = '0.0.0.0'
-PORT = 9009
-
-app.logger.debug("Starting...")
-app.logger.debug("SPARK SOCKET: " + IP + ":" + str(PORT))
-
-# Spark socket connection
-conn = None
-s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-s.bind((IP, PORT))
-s.listen(1)
-app.logger.debug("Waiting for TCP connection...")
-conn, addr = s.accept()
-app.logger.debug("Connected to Spark")
+spark_conn = None
 
 # A dictionary of queues to feed the front-end. Each user ID is the key and their corresponding value is the queue
 # containing their data.
 user_dicts = {}
 
 # We will use this to fetch the name of the user using the id received from Spark.
-id_name_dict = {1: "Aamir", 2: "Hassaan", 3: "Ege", 4: "Michael"}
+id_name_dict = {1: "A", 2: "H", 3: "E", 4: "M"}
+
+
+def connect_to_spark():
+    app.logger.debug("Starting...")
+    app.logger.debug("SPARK SOCKET: " + IP + ":" + str(PORT))
+    # Spark socket connection
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    s.bind((IP, PORT))
+    s.listen(1)
+    app.logger.debug("Waiting for TCP connection...")
+    conn, addr = s.accept()
+    app.logger.debug("Connected to Spark")
+
+
+if SPARK == 'true':
+    connect_to_spark()
 
 
 @app.route('/')
@@ -83,7 +91,8 @@ def echo(ws):
 
         if data['event'] == "gait":
             # app.logger.info("Gait message: {}".format(message))
-            sendToSpark(message)
+            if SPARK == 'true':
+                sendToSpark(message)
             dataPoints = data['data']['gait']
             for dataPoint in dataPoints:
                 if dataPoint:
@@ -121,7 +130,7 @@ def echo(ws):
             app.logger.info("Stop Message received: {} for uuid={}".format(message, uuid))
             app.logger.info("Now saving CSV file")
             with open(uuid + ".csv", 'a') as file:
-                while (not q.empty()):
+                while not q.empty():
                     file.write(q.get() + '\n')
             app.logger.info("Gait data saved as {}.csv".format(uuid))
             upload_file(uuid + ".csv", "gait-poc-bucket", uuid)
@@ -227,7 +236,8 @@ def get_queue(ws):
                 ts = datetime.datetime.fromtimestamp(float(current_data[1]) / 1000)
                 # app.logger.info("DEBUG TIME {} XYZ {}".format(user_id, str(ts) ))
     else:
-        abort (403)
+        abort(403)
+
 
 # def get_queue_fork(queue, ws):
 #     global user_dicts
@@ -272,15 +282,18 @@ def upload_file(file_name, bucket, uuid, object_name=None):
         object_name = file_name
 
     # Upload the file
+    if ACCESS_KEY is None and SECRET_KEY is None:
+        return;
+
     s3_client = boto3.client('s3', aws_access_key_id=ACCESS_KEY, aws_secret_access_key=SECRET_KEY)
     try:
         app.logger.info("Now uploading Gait data to S3 Bucket.")
         response = s3_client.upload_file(file_name, bucket, object_name)
+        app.logger.info("Gait data saved as {}.csv to S3 Bucket".format(uuid))
     except ClientError as e:
         logging.error(e)
         app.logger.warning("Error while saving gait data to S3 Bucket.")
         return False
-    app.logger.info("Gait data saved as {}.csv to S3 Bucket".format(uuid))
     return True
 
 
@@ -292,6 +305,7 @@ def verifyOrder(last, current):
     if currentTimeStamp < lastTimeStamp:
         app.logger.warning("Inconsistent order")
 
+
 # https://stackoverflow.com/questions/35068363/how-to-get-around-a-websocket-call-blocking-other-websocket-calls
 def sendToSpark(message):
     p = Process(target=sendToSparkHelper, args=(message,))
@@ -301,11 +315,12 @@ def sendToSpark(message):
     # for datapoint in gait:
     #     conn.send(str.encode(datapoint + '\n'))
 
+
 def sendToSparkHelper(message):
     data = json.loads(message)
     gait = data["data"]["gait"]
     for datapoint in gait:
-        conn.send(str.encode(datapoint + '\n'))
+        spark_conn.send(str.encode(datapoint + '\n'))
 
 
 def main():
