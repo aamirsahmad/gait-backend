@@ -229,13 +229,8 @@ def get_queue(ws):
         last_sent_timestamp = float("-Inf")
         while True:  # user_id in queue_dicts
             current_data = user_dicts[user_id]["queue"].get()
-            if last_sent_timestamp + 200 > float(current_data[1]):
-                continue
-            else:
-                data = {"xyz": current_data[0], "timestamp": current_data[1]}
-                ws.send(json.dumps(data))
-                last_sent_timestamp = float(current_data[1])
-                ts = datetime.datetime.fromtimestamp(float(current_data[1]) / 1000)
+            data = {"xyz": current_data[0], "timestamp": current_data[1]}
+            ws.send(json.dumps(data))
                 # app.logger.info("DEBUG TIME {} XYZ {}".format(user_id, str(ts) ))
     else:
         abort(403)
