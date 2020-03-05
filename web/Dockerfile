@@ -1,4 +1,4 @@
-FROM tensorflow/tensorflow:latest-py3
+FROM python
 COPY . /app
 WORKDIR /app
 EXPOSE 9009
