@@ -48,3 +48,8 @@ docker run -it -v "$PWD:/app" --link gait:gait eecsyorku/eecs4415
 pip3 install -r requirements.txt
 spark-submit spark_driver.py
 ```
+
+
+## Using Docker-compose (the easy way)
+1. Specify the environment variables in .env.dev for both web and spark
+2. `docker-compose up`

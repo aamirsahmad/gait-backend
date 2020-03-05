@@ -1,0 +1,31 @@
+version: '3.7'
+
+services:
+  web:
+    build: ./web
+    command: gunicorn -k flask_sockets.worker app:app --log-level DEBUG --bind 0.0.0.0:8095
+    ports:
+      - 8095:8095
+    env_file:
+      - ./web/.env.dev
+    networks: 
+      default:
+        aliases: 
+          - api
+      # depends_on:
+    #   - spark
+  spark:
+    build: ./spark
+    command: spark-submit spark_driver.py
+    # ports:
+    #   - 9009:9009
+    # links:
+    #   - "web:web"
+    env_file:
+      - ./spark/.env.dev
+    networks: 
+      default:
+        aliases: 
+          - dpe
+
+

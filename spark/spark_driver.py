@@ -20,8 +20,11 @@ import numpy as np
 import os
 
 import data_transformation as dt
+API_SERVICE_URL = str(os.getenv('API_SERVICE_URL'))
+API_SERVICE_PORT = str(os.getenv('API_SERVICE_PORT'))
+SPARK_SOCKET_PORT = str(os.getenv('SPARK_SOCKET_PORT'))
 
-back_end_url = "http://" + os.environ['GAIT_PORT_9009_TCP_ADDR'] + ':8095/add_inference'
+back_end_url = "http://" + API_SERVICE_URL + ':' + API_SERVICE_PORT + '/add_inference'
 
 
 # import json # parse incoming data to json and then access fields
@@ -116,7 +119,8 @@ def main():
     model_data_bc = s_context.broadcast(model_data)
 
     # connect to port 9009 i.e. twitter-client
-    socket_ts = s_stream_context.socketTextStream("gait", 9009)
+    print(API_SERVICE_URL + ' ' + SPARK_SOCKET_PORT)
+    socket_ts = s_stream_context.socketTextStream(API_SERVICE_URL, int(SPARK_SOCKET_PORT))
 
     print("\n################################\n")
 

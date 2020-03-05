@@ -44,7 +44,7 @@ user_dicts = OrderedDict()
 id_name_dict = {1: "A", 2: "H", 3: "E", 4: "M"}
 
 
-def connect_to_spark():
+if SPARK == 'true':
     app.logger.debug("Starting...")
     app.logger.debug("SPARK SOCKET: " + IP + ":" + str(PORT))
     # Spark socket connection
@@ -53,12 +53,8 @@ def connect_to_spark():
     s.bind((IP, PORT))
     s.listen(1)
     app.logger.debug("Waiting for TCP connection...")
-    conn, addr = s.accept()
+    spark_conn, addr = s.accept()
     app.logger.debug("Connected to Spark")
-
-
-if SPARK == 'true':
-    connect_to_spark()
 
 
 @app.route('/')

@@ -11,4 +11,3 @@ Werkzeug==0.15.6
 gunicorn
 boto3
 flask_cors
-tensorflow
