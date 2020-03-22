@@ -36,12 +36,12 @@ app.logger.setLevel(gunicorn_logger.level)
 
 spark_conn = None
 
-# A dictionary of queues to feed the front-end. Each user ID is the key and their corresponding value is the queue
-# containing their data.
+# A dictionary of queues to feed the front-end. Each user ID is the key 
+# and their corresponding value is the queue containing their data.
 user_dicts = OrderedDict()
 
 # We will use this to fetch the name of the user using the id received from Spark.
-id_name_dict = {1: "A", 2: "H", 3: "E", 4: "M"}
+id_name_dict = {1: "Noor", 2: "Talha", 3: "Aamir"}
 
 
 if SPARK == 'true':
@@ -185,9 +185,8 @@ def add_inference():
     global user_dicts
     incoming_data = request.get_json()
     # app.logger.info("DEBUG: {}".format(user_dicts))
-    # app.logger.info("DEBUG: {}".format(incoming_data))
+    app.logger.info("add_inference() data=: {}".format(incoming_data))
     if incoming_data["actual_user_id"] in user_dicts:
-        app.logger.info("DEBUG: {}".format(user_dicts))
         inference = {"confidency": incoming_data['confidency'], "inferred_user_id": incoming_data["inferred_user_id"],
                      "inferred_users_name": id_name_dict[incoming_data["inferred_user_id"]]}
         user_dicts[incoming_data["actual_user_id"]]["inferences"].append(inference)
@@ -202,7 +201,7 @@ def add_inference():
 def get_inference():
     actual_user_id = str(request.args.get("user_id", type=str))
     global user_dicts
-    app.logger.info("DEBUG: {}".format(user_dicts))
+    app.logger.info("get_inference(), users : {}".format(user_dicts))
     if actual_user_id in user_dicts:
         return jsonify(items=user_dicts[actual_user_id]["inferences"]), 200
     else:

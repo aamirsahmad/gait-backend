@@ -11,8 +11,9 @@ from pyspark.sql import SparkSession
 
 import math
 from collections import OrderedDict
-from tensorflow.compat.v1.gfile import FastGFile
-import tensorflow as tf
+# from tensorflow.compat.v1.gfile import FastGFile
+# import tensorflow as tf
+from tensorflow import keras
 
 from io import StringIO
 import pandas as pd
@@ -104,6 +105,7 @@ def main():
 
     sys.path.insert(0, SparkFiles.getRootDirectory())
 
+    s_context.addFile('./model/cnn_modell.h5')    
     s_context.addFile("./data_transformation.py")
     # TODO: add logger to spark
 
@@ -113,10 +115,12 @@ def main():
     s_stream_context = pss.StreamingContext(s_context, interval_seconds)
     s_stream_context.checkpoint("checkpoint_TSA")
 
-    with tf.gfile.GFile('./frozenInferenceGraphIdentification.pb', "rb") as f:
-        model_data = f.read()
+    # with tf.gfile.GFile('./frozenInferenceGraphIdentification.pb', "rb") as f:
+    #     model_data = f.read()
 
-    model_data_bc = s_context.broadcast(model_data)
+
+    # model_data_bc = s_context.broadcast(model_data)
+    # model_data_bc = s_context.broadcast(loaded_model)
 
     # connect to port 9009 i.e. twitter-client
     print(API_SERVICE_URL + ' ' + SPARK_SOCKET_PORT)
@@ -156,13 +160,13 @@ def main():
             datas = data_rdd.collect()
             if len(datas) > 0:
                 # print("INSIDE TRY BEFORE WITH")
-                with tf.Graph().as_default() as graph:
-                    graph_def = tf.GraphDef()
-                    graph_def.ParseFromString(model_data_bc.value)
-                    tf.import_graph_def(graph_def, name="prefix")
+                # with tf.Graph().as_default() as graph:
+                #     graph_def = tf.GraphDef()
+                #     graph_def.ParseFromString(model_data_bc.value)
+                #     tf.import_graph_def(graph_def, name="prefix")
                 # print("INSIDE TRY AFTER WITH")
-                x = graph.get_tensor_by_name('prefix/Placeholder:0')
-                y = graph.get_tensor_by_name('prefix/Softmax:0')
+                # x = graph.get_tensor_by_name('prefix/Placeholder:0')
+                # y = graph.get_tensor_by_name('prefix/Softmax:0')
 
                 for data in datas:
                     for id_xyz in data:
@@ -180,19 +184,30 @@ def main():
                                     [np.array(cell, dtype=np.float32) for cell in [each.strip().split(' ')]])
                             X_test = np.transpose(np.array(X_signals), (1, 2, 0))
 
-                            with tf.Session(graph=graph) as sess:
-                                y_out = sess.run(y, feed_dict={
-                                    x: X_test
-                                })
+                            from pyspark import SparkFiles
+                            from tensorflow.keras.models import load_model
+                            path = SparkFiles.get('cnn_modell.h5')
+                            model = load_model(path)
+                            print("Loaded model from disk")
+                            preds = model.predict(X_test)
+                            for p in preds:
+                                inferred_user_id = str(np.argmax(p) + 1)
+                                results = {'confidency': str(np.amax(p)), 'inferred_user_id': inferred_user_id, 'actual_user_id': str(id)}
+                                print(results)
+                                requests.post(back_end_url, json=results)
+                            # with tf.Session(graph=graph) as sess:
+                            #     y_out = sess.run(y, feed_dict={
+                            #         x: X_test
+                            #     })
 
-                                for each in y_out:
-                                    inferred_user_id = str(np.argmax(each) + 1)
-                                    confidency = str(np.amax(each))
-                                    actual_user_id = str(id)
-                                    results = {'confidency': confidency, 'inferred_user_id': inferred_user_id,
-                                               'actual_user_id': actual_user_id}
-                                    print(results)
-                                    requests.post(back_end_url, json=results)
+                            #     for each in y_out:
+                            #         inferred_user_id = str(np.argmax(each) + 1)
+                            #         confidency = str(np.amax(each))
+                            #         actual_user_id = str(id)
+                            #         results = {'confidency': confidency, 'inferred_user_id': inferred_user_id,
+                            #                    'actual_user_id': actual_user_id}
+                            #         print(results)
+                            #         requests.post(back_end_url, json=results)
         except:
             e = sys.exc_info()
             print("Error: %s" % e)
