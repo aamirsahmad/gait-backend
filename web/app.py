@@ -187,8 +187,11 @@ def add_inference():
     # app.logger.info("DEBUG: {}".format(user_dicts))
     app.logger.info("add_inference() data=: {}".format(incoming_data))
     if incoming_data["actual_user_id"] in user_dicts:
-        inference = {"confidency": incoming_data['confidency'], "inferred_user_id": incoming_data["inferred_user_id"],
-                     "inferred_users_name": id_name_dict[incoming_data["inferred_user_id"]]}
+        inference = {
+                        "confidency": float(incoming_data['confidency']), 
+                        "inferred_user_id": int(incoming_data["inferred_user_id"]),
+                        "inferred_users_name": id_name_dict[int(incoming_data["inferred_user_id"])]
+                     }
         user_dicts[incoming_data["actual_user_id"]]["inferences"].append(inference)
         resp = jsonify(success=True)
         return resp, 200
