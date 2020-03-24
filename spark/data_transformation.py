@@ -85,57 +85,6 @@ def find_all_peaks_in_partition(str_data):
 
     print('find_all_peaks_in_partition: ', peak_map)
     return peak_map
-    # Y_AXIS_THRESHOLD = 28.00 # 
-    # SKIP_FRAMES = 35 # a good heuristics value for 50Hz can go up to 45
-    # index = 1 # skip first
-
-    # # data_list = str_data.split('\n', 1)
-    # # str_data = data_list[1]
-
-    # # for line in str_data:
-    # # print(str_data)
-    # # str_data = str_data.splitlines()
-    # # initialize map 
-    # # print(str_data)
-    # peak_map = OrderedDict()
-    # try:
-    #     str_data = iter(str_data)
-    #     # for i in range(len(str_data)):
-    #     #     index = int((str_data[i].split(',')[0]).strip())
-    #     #     peak_map[index] = False
-        
-    #     e1, e2 = next(str_data), next(str_data)
-    #     is_peak = False
-    #     for e3 in str_data:
-    #         is_peak = False
-    #         # vSums values : v1, v2, v3
-    #         v1 = float((e1.split(',')[6]).strip())
-    #         v2 = float((e2.split(',')[6]).strip())
-    #         v3 = float((e3.split(',')[6]).strip())
-
-    #         i2 = int((e2.split(',')[0]).strip()) # index of e2
-    #         # print(v3)
-    #         if (v1 < v2 and v3 < v2):
-    #             # it's some peak
-    #             if(v2 > Y_AXIS_THRESHOLD):
-    #                 # it's a Real peak (since it's 'first' peak in the window)
-    #                 # move the sliding window
-    #                 peak_map[i2] = True
-    #                 is_peak = True
-    #                 # slide the window
-    #                 for i in range(SKIP_FRAMES - 1):
-    #                     next(str_data)
-    #                 # adjust pointers
-    #                 e1 = next(str_data)
-    #                 e2 = next(str_data)
-
-    #         # move pointers
-    #         if (is_peak == False):
-    #             e1 = e2
-    #             e2 = e3
-    # except StopIteration:
-    #     pass
-    # return peak_map
 
 def gait_segmentation(str_data, peak_map):
     """
