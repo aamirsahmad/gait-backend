@@ -1,7 +1,8 @@
 FROM python
-COPY . /app
 WORKDIR /app
-EXPOSE 9009
-EXPOSE 8095
+COPY requirements.txt requirements.txt
 RUN pip install --upgrade pip
 RUN pip install -r requirements.txt
+COPY . /app
+EXPOSE 9009
+EXPOSE 8095

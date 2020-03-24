@@ -65,8 +65,8 @@ def data_processing_driver(str_data):
     # print('peak_map length is : ' + str(len(peak_map)))
 
     # print('str data length is ' + str(len(str_data)))
-    if (len(peak_map) < 5):
-        return dl_sample_list
+    # if (len(peak_map) < 5):
+    #     return dl_sample_list
     # else:
     #     for (k,v) in peak_map.items():
     #         print('peak map items are:')
@@ -111,7 +111,7 @@ def main():
 
     # use spark context to create the stream context
     # 5 seconds ensure that we get two overlapping samples of 4 seconds
-    interval_seconds = 5
+    interval_seconds = 10
     s_stream_context = pss.StreamingContext(s_context, interval_seconds)
     s_stream_context.checkpoint("checkpoint_TSA")
 
@@ -212,6 +212,7 @@ def main():
             e = sys.exc_info()
             print("Error: %s" % e)
 
+    print('infer:', 'running inference on segmented data')
     segmentedData.foreachRDD(infer)
 
     # start the streaming computation

@@ -11,6 +11,7 @@ import socket
 
 # NOTE: The print statements in this module are crucial for debugging (DO NOT remove)
 # Consider replacing them with logger INFO/WARN 
+GAIT_CYCLE_LENGTH_MS = 1000
 
 
 def find_all_peaks_in_partition(str_data):
@@ -26,57 +27,115 @@ def find_all_peaks_in_partition(str_data):
         (78, 5, 1574587264032, -1.403481, 4.89542, 8.473579, 9.886174);
         (index,userID,timeMs,accX,accY,accZ,vSum)
     """
-    Y_AXIS_THRESHOLD = 28.00 # 
-    SKIP_FRAMES = 35 # a good heuristics value for 50Hz can go up to 45
-    index = 1 # skip first
+    max_vsum = 0
+    max_line_list = ''
+    max_timestamp = 0
+    last_timestamp = 0
+    max_e2 = ''
 
-    # data_list = str_data.split('\n', 1)
-    # str_data = data_list[1]
+    index = 1  # skip first
 
-    # for line in str_data:
-    # print(str_data)
-    # str_data = str_data.splitlines()
-    # initialize map 
-    # print(str_data)
     peak_map = OrderedDict()
     try:
         str_data = iter(str_data)
-        # for i in range(len(str_data)):
-        #     index = int((str_data[i].split(',')[0]).strip())
-        #     peak_map[index] = False
-        
-        e1, e2 = next(str_data), next(str_data)
+
+        next(str_data)
+        e1, e2, e3 = next(str_data), next(str_data), next(str_data)
         is_peak = False
+
         for e3 in str_data:
             is_peak = False
-            # vSums values : v1, v2, v3
             v1 = float((e1.split(',')[6]).strip())
             v2 = float((e2.split(',')[6]).strip())
             v3 = float((e3.split(',')[6]).strip())
 
-            i2 = int((e2.split(',')[0]).strip()) # index of e2
-            # print(v3)
+            i2 = int((e2.split(',')[0]).strip())  # index of e2
             if (v1 < v2 and v3 < v2):
                 # it's some peak
-                if(v2 > Y_AXIS_THRESHOLD):
-                    # it's a Real peak (since it's 'first' peak in the window)
-                    # move the sliding window
+                peak_index = int((e2.split(',')[0]).strip())
+                line = e2.replace("\n", "").split(",")
+                index = line[0].strip()
+                userId = line[1].strip()
+                timestamp = line[2].strip()
+                accelerometer_x = line[3].strip()
+                accelerometer_y = line[4].strip()
+                accelerometer_z = line[5].strip()
+                vector_sum = line[6].strip()
+                line_list = [index, str(userId), timestamp, accelerometer_x, accelerometer_y, accelerometer_z,
+                                vector_sum]
+                if(int(last_timestamp) == 0):
+                    last_timestamp = timestamp
+                if(float(vector_sum) > float(max_vsum)):
+                    max_vsum = vector_sum
+                    max_line_list = line_list
+                    max_e2 = e2
+
+                if ((int(timestamp) - int(last_timestamp)) > GAIT_CYCLE_LENGTH_MS):
+                    max_vsum = 0
+                    last_timestamp = max_timestamp
                     peak_map[i2] = True
-                    is_peak = True
-                    # slide the window
-                    for i in range(SKIP_FRAMES - 1):
-                        next(str_data)
-                    # adjust pointers
-                    e1 = next(str_data)
-                    e2 = next(str_data)
+                    # peaks.append(max_line_list)
+                    # peakFile.write(max_e2)
 
             # move pointers
-            if (is_peak == False):
-                e1 = e2
-                e2 = e3
+            e1 = e2
+            e2 = e3
     except StopIteration:
         pass
+
+    print('find_all_peaks_in_partition: ', peak_map)
     return peak_map
+    # Y_AXIS_THRESHOLD = 28.00 # 
+    # SKIP_FRAMES = 35 # a good heuristics value for 50Hz can go up to 45
+    # index = 1 # skip first
+
+    # # data_list = str_data.split('\n', 1)
+    # # str_data = data_list[1]
+
+    # # for line in str_data:
+    # # print(str_data)
+    # # str_data = str_data.splitlines()
+    # # initialize map 
+    # # print(str_data)
+    # peak_map = OrderedDict()
+    # try:
+    #     str_data = iter(str_data)
+    #     # for i in range(len(str_data)):
+    #     #     index = int((str_data[i].split(',')[0]).strip())
+    #     #     peak_map[index] = False
+        
+    #     e1, e2 = next(str_data), next(str_data)
+    #     is_peak = False
+    #     for e3 in str_data:
+    #         is_peak = False
+    #         # vSums values : v1, v2, v3
+    #         v1 = float((e1.split(',')[6]).strip())
+    #         v2 = float((e2.split(',')[6]).strip())
+    #         v3 = float((e3.split(',')[6]).strip())
+
+    #         i2 = int((e2.split(',')[0]).strip()) # index of e2
+    #         # print(v3)
+    #         if (v1 < v2 and v3 < v2):
+    #             # it's some peak
+    #             if(v2 > Y_AXIS_THRESHOLD):
+    #                 # it's a Real peak (since it's 'first' peak in the window)
+    #                 # move the sliding window
+    #                 peak_map[i2] = True
+    #                 is_peak = True
+    #                 # slide the window
+    #                 for i in range(SKIP_FRAMES - 1):
+    #                     next(str_data)
+    #                 # adjust pointers
+    #                 e1 = next(str_data)
+    #                 e2 = next(str_data)
+
+    #         # move pointers
+    #         if (is_peak == False):
+    #             e1 = e2
+    #             e2 = e3
+    # except StopIteration:
+    #     pass
+    # return peak_map
 
 def gait_segmentation(str_data, peak_map):
     """
@@ -85,15 +144,11 @@ def gait_segmentation(str_data, peak_map):
     """
     samples_list = [] # result
     # each sample will be a csv like table string ready for pandas
-    peaks_to_discover = 5
     # index,userID,timeMs,accX,accY,accZ,vSum
 
     # state 0 : write data until peak, no new line, go to state 1
     # state 1 : write data until peak, add new line, write same data again go to state 1
-    peak_map_len = len(peak_map)
-
-    if(peak_map_len < 5):
-        return samples_list
+    peaks_to_discover = len(peak_map)
 
     peak_map_iter = iter(peak_map)
 
