@@ -1,16 +1,5 @@
 # backend
 
-## How to run?
-Define you port
-
-HTTP_SERVER_PORT = 8094 (default)
-
-1. `pip3 install -r requirements.txt`
-
-2. `python3 app.py`
-
-3. connect to ws://hostAddress:Port/gait
-
 ## Input data format/schema
 ### event type: connect
 ```json
@@ -42,3 +31,25 @@ HTTP_SERVER_PORT = 8094 (default)
   }
 }
 ```
+
+
+## How to run alongside Apache Spark with two Docker containers?
+> Requires AWS IAM user with permissions for S3 actions.
+```
+// gait app.py
+docker run -it -v "$PWD:/app" --name gait -w /app -p 8095:8095 -p 9009:9009 python bash
+export ACCESS_KEY=<AWS_IAM_ACCESS_KEY>
+export SECRET_KEY=<AWS_IAM_SECRET_KEY>
+pip3 install -r requirements.txt
+gunicorn -k flask_sockets.worker app:app --log-level DEBUG --bind 0.0.0.0:8095
+
+// spark driver 
+docker run -it -v "$PWD:/app" --link gait:gait eecsyorku/eecs4415
+pip3 install -r requirements.txt
+spark-submit spark_driver.py
+```
+
+
+## Using Docker-compose (the easy way)
+1. Specify the environment variables in .env.dev for both web and spark
+2. `docker-compose up`
